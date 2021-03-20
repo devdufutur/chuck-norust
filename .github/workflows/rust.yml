@@ -10,30 +10,42 @@ env:
 
 jobs:
   publish:
-    name: Publish for ${{ matrix.os }}
+    name: Publish for ${{ matrix.os }} with ${{ matrix.rust-host }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
             - os: windows-latest
-              platform: x32
-              artifact_name: chuck-norust.exe
-              asset_name: chuck-norust_x86.exe
-            - os: windows-latest
-              platform: x64
+              rust-host: x86_64-pc-windows-msvc
               artifact_name: chuck-norust.exe
               asset_name: chuck-norust_x64.exe
+            - os: windows-latest
+              rust-host: i686-pc-windows-msvc
+              artifact_name: chuck-norust.exe
+              asset_name: chuck-norust_x86.exe
 
     steps:
     - uses: actions/checkout@v2
 
-    - run: cargo build --release --verbose
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: ${{ matrix.rust-host }}
+        override: true
+#
+#    - uses: actions-rs/cargo@v1
+#      with:
+#        use-cross: true
+#        command: build
+#        args: --release --target=${{ matrix.rust-host }}
+
+    - run: cargo build --release --target=${{ matrix.rust-host }} --verbose
 
     - name: Upload binaries to release
       uses: svenstaro/upload-release-action@v2
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: target/release/${{ matrix.artifact_name }}
+        file: target/${{ matrix.rust-host }}/release/${{ matrix.artifact_name }}
         asset_name: ${{ matrix.asset_name }}
         tag: ${{ github.ref }}
 #    - name: Run tests
