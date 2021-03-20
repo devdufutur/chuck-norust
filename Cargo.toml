@@ -1,0 +1,26 @@
+[package]
+name = "chuck-norust"
+version = "0.1.0"
+authors = ["devdufutur <devdufutur@domain.tld>"]
+edition = "2018"
+build = "assets/build.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+native-windows-gui = "1.0.10"
+native-windows-derive = "1.0.3"
+lazy_static = "1.4.0"
+reqwest = { version = "0.11.2", features = ["json", "blocking"] }
+serde = { version = "1.0.124", features = ["derive"] }
+once_cell = "1.7.2"
+
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1.11"
+
+[package.metadata.winres]
+ProductName = "Chuck Norrust"
+OriginalFilename = "CHUCKNORRUST.EXE"
+LegalCopyright = "DevDuFutur - 2021"
+ProductVersion = "0.1.0"
