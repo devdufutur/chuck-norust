@@ -16,8 +16,13 @@ jobs:
       matrix:
         include:
             - os: windows-latest
+              platform: x32
               artifact_name: chuck-norust.exe
-              asset_name: chuck-norust.exe
+              asset_name: chuck-norust_x86.exe
+            - os: windows-latest
+              platform: x64
+              artifact_name: chuck-norust.exe
+              asset_name: chuck-norust_x64.exe
 
     steps:
     - uses: actions/checkout@v2
