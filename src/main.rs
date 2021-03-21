@@ -4,11 +4,13 @@
 extern crate lazy_static;
 extern crate native_windows_gui as nwg;
 #[macro_use]
+extern crate native_windows_derive as nwd;
+#[macro_use]
 extern crate serde;
 
 use std::fmt::{Display, Formatter};
 
-use nwg::{NativeUi, TrayNotificationFlags, Timer, MenuItem, Menu, TrayNotification, Icon, ComboBox, Label, Window, MenuSeparator, GlobalCursor, stop_thread_dispatch, init, dispatch_thread_events, Button};
+use nwg::{NativeUi, TrayNotificationFlags, Timer, MenuItem, Menu, TrayNotification, Icon, ComboBox, Label, Window, MenuSeparator, GlobalCursor, stop_thread_dispatch, init, dispatch_thread_events, Button, EmbedResource};
 use std::sync::Mutex;
 use once_cell::sync::Lazy;
 
@@ -59,27 +61,71 @@ impl<T> Display for ComboBoxModel<T> {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, NwgUi)]
 pub struct ChuckApp {
+
+    #[nwg_resource]
+    embed: EmbedResource,
+
     // window: MessageWindow,
+    #[nwg_control(size: (280, 130), center: true, title: "Settings", flags: "WINDOW")]
     window: Window,
+
+    #[nwg_control(position: (10, 10), size: (260, 40), text: "How fast should Chuck speak ?")]
     label_settings: Label,
+    #[nwg_control(position: (10, 40), size: (260, 40), selected_index: Some(0), collection: DURATION_MODEL.to_vec())]
+    #[nwg_events(OnComboxBoxSelection: [ChuckApp::change_timer_duration])]
     cb_settings: ComboBox<ComboBoxModel<u32>>,
+    #[nwg_control(position: (10, 80), size: (260, 40), text: "OK")]
+    #[nwg_events(OnButtonClick: [ChuckApp::hide_settings_window])]
     ok_settings: Button,
-    icon: Icon,
+
+    #[nwg_resource(source_embed: Some(&data.embed), source_embed_id: 1)]
+    icon_app: Icon,
+
+    #[nwg_resource(source_embed: Some(&data.embed), source_embed_id: 2)]
     icon_notif: Icon,
+
+    #[nwg_control(icon: Some(&data.icon_app), tip: Some("Chuck Norust"))]
+    #[nwg_events(MousePressLeftUp: [ChuckApp::toggle_settings_visible], OnContextMenu: [ChuckApp::show_menu])]
     tray: TrayNotification,
+    #[nwg_control(parent: window, popup: true)]
     tray_menu: Menu,
+    #[nwg_control(parent: tray_menu, text: "&Repeat last quote", disabled: true)]
+    #[nwg_events(OnMenuItemSelected: [ChuckApp::repeat_last_quote])]
     tray_item1: MenuItem,
+    #[nwg_control(parent: tray_menu, text: "&Next quote")]
+    #[nwg_events(OnMenuItemSelected: [ChuckApp::next_quote])]
     tray_item2: MenuItem,
-    tray_item3: MenuItem,
-    tray_item4: MenuItem,
-    timer: Timer,
+    #[nwg_control(parent: tray_menu)]
     tray_item_separator: MenuSeparator,
+    #[nwg_control(parent: tray_menu, text: "&Settings...")]
+    #[nwg_events(OnMenuItemSelected: [ChuckApp::show_settings_window])]
+    tray_item3: MenuItem,
+    #[nwg_control(parent: tray_menu)]
     tray_item_separator2: MenuSeparator,
+    #[nwg_control(parent: tray_menu, text: "E&xit")]
+    #[nwg_events(OnMenuItemSelected: [ChuckApp::exit])]
+    tray_item4: MenuItem,
+    #[nwg_control(interval: 10000, stopped: false)]
+    #[nwg_events(OnTimerTick: [ChuckApp::next_quote])]
+    timer: Timer,
 }
 
 impl ChuckApp {
+
+    fn toggle_settings_visible(&self) {
+        self.window.set_visible(!self.window.visible());
+    }
+
+    fn show_settings_window(&self) {
+        self.window.set_visible(true);
+    }
+
+    fn hide_settings_window(&self) {
+        self.window.set_visible(false);
+    }
+
     fn show_menu(&self) {
         let (x, y) = GlobalCursor::position();
         self.tray_menu.popup(x, y);
@@ -123,202 +169,20 @@ impl ChuckApp {
         }
     }
 
+    fn change_timer_duration(&self) {
+        if let Some(ComboBoxModel { value, label }) = self.cb_settings
+            .selection()
+            .and_then(|idx| DURATION_MODEL.get(idx))
+        {
+            println!("sélection de {} : {} ms", label, *value);
+            self.timer.stop();
+            self.timer.set_interval(*value);
+            self.timer.start();
+        }
+    }
+
     fn exit(&self) {
         stop_thread_dispatch();
-    }
-}
-
-//
-// ALL of this stuff is handled by native-windows-derive
-//
-mod system_tray_ui {
-    use std::cell::RefCell;
-    use std::ops::Deref;
-    use std::rc::Rc;
-
-    use native_windows_gui as nwg;
-    use nwg::{ComboBox, Label, Window, EventHandler, EmbedResource, MousePressEvent, full_bind_event_handler, unbind_event_handler};
-
-    use super::*;
-
-    pub struct ChuckAppUi {
-        inner: Rc<ChuckApp>,
-        default_handler: RefCell<Vec<EventHandler>>,
-    }
-
-    impl NativeUi<ChuckAppUi> for ChuckApp {
-        fn build_ui(mut data: ChuckApp) -> Result<ChuckAppUi, nwg::NwgError> {
-            use nwg::Event as E;
-
-            // embedded icons
-            if let Some(icon) = EmbedResource::load(None)?.icon(1, None) {
-                data.icon = icon;
-            }
-            if let Some(icon_notif) = EmbedResource::load(None)?.icon(2, None) {
-                data.icon_notif = icon_notif;
-            }
-
-            Window::builder()
-                .size((280, 130))
-                .title("Settings")
-                .center(true)
-                .flags(nwg::WindowFlags::WINDOW) // invisible
-                .build(&mut data.window)?;
-
-            TrayNotification::builder()
-                .parent(&data.window)
-                .icon(Some(&data.icon))
-                .tip(Some("Chuck Norust"))
-                .build(&mut data.tray)?;
-
-            Menu::builder()
-                .popup(true)
-                .parent(&data.window)
-                .build(&mut data.tray_menu)?;
-
-            MenuItem::builder()
-                .text("&Repeat last quote")
-                .disabled(true)
-                .parent(&data.tray_menu)
-                .build(&mut data.tray_item1)?;
-
-            MenuItem::builder()
-                .text("&Next quote")
-                .parent(&data.tray_menu)
-                .build(&mut data.tray_item2)?;
-
-            MenuSeparator::builder()
-                .parent(&data.tray_menu)
-                .build(&mut data.tray_item_separator)?;
-
-            MenuItem::builder()
-                .text("&Settings")
-                .parent(&data.tray_menu)
-                .build(&mut data.tray_item3)?;
-
-            MenuSeparator::builder()
-                .parent(&data.tray_menu)
-                .build(&mut data.tray_item_separator2)?;
-
-            MenuItem::builder()
-                .text("E&xit")
-                .parent(&data.tray_menu)
-                .build(&mut data.tray_item4)?;
-
-            Timer::builder()
-                .interval(10000)
-                .parent(&data.window)
-                .stopped(false)
-                .build(&mut data.timer)?;
-
-            Label::builder()
-                .parent(&data.window)
-                .position((10, 10))
-                .size((260, 40))
-                .text("How fast should Chuck speak ?")
-                .build(&mut data.label_settings)?;
-
-            ComboBox::builder()
-                .parent(&data.window)
-                .position((10, 40))
-                .size((260, 40))
-                .selected_index(Some(0))
-                .collection(DURATION_MODEL.to_vec())
-                .build(&mut data.cb_settings)?;
-
-            Button::builder()
-                .parent(&data.window)
-                .position((10, 80))
-                .size((260, 40))
-                .text("OK")
-                .build(&mut data.ok_settings)?;
-
-            // Wrap-up
-            let ui = ChuckAppUi {
-                inner: Rc::new(data),
-                default_handler: Default::default(),
-            };
-
-            // Events
-            let evt_ui = Rc::downgrade(&ui.inner);
-            let handle_events = move |evt, _evt_data, handle| {
-                if let Some(evt_ui) = evt_ui.upgrade() {
-                    match evt {
-                        E::OnButtonClick => {
-                            if &handle == &evt_ui.ok_settings {
-                                evt_ui.window.set_visible(false);
-                            }
-                        }
-                        E::OnComboxBoxSelection => {
-                            if let Some(ComboBoxModel { value, label }) = evt_ui
-                                .cb_settings
-                                .selection()
-                                .and_then(|idx| DURATION_MODEL.get(idx))
-                            {
-                                println!("sélection de {} : {} ms", label, *value);
-                                evt_ui.timer.stop();
-                                evt_ui.timer.set_interval(*value);
-                                evt_ui.timer.start();
-                            }
-                        }
-                        E::OnTimerTick => {
-                            if &handle == &evt_ui.timer {
-                                evt_ui.next_quote();
-                            }
-                        }
-                        E::OnMousePress(MousePressEvent::MousePressLeftUp) => {
-                            if &handle == &evt_ui.tray {
-                                evt_ui.window.set_visible(!evt_ui.window.visible());
-                            }
-                        }
-                        E::OnContextMenu => {
-                            if &handle == &evt_ui.tray {
-                                ChuckApp::show_menu(&evt_ui);
-                            }
-                        }
-                        E::OnMenuItemSelected => {
-                            if &handle == &evt_ui.tray_item1 {
-                                evt_ui.repeat_last_quote();
-                            } else if &handle == &evt_ui.tray_item2 {
-                                evt_ui.next_quote();
-                            } else if &handle == &evt_ui.tray_item3 {
-                                evt_ui.window.set_visible(true);
-                            } else if &handle == &evt_ui.tray_item4 {
-                                evt_ui.exit();
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            };
-
-            ui.default_handler
-                .borrow_mut()
-                .push(full_bind_event_handler(
-                    &ui.window.handle,
-                    handle_events,
-                ));
-
-            return Ok(ui);
-        }
-    }
-
-    impl Drop for ChuckAppUi {
-        /// To make sure that everything is freed without issues, the default handler must be unbound.
-        fn drop(&mut self) {
-            let mut handlers = self.default_handler.borrow_mut();
-            for handler in handlers.drain(0..) {
-                unbind_event_handler(&handler);
-            }
-        }
-    }
-
-    impl Deref for ChuckAppUi {
-        type Target = ChuckApp;
-
-        fn deref(&self) -> &ChuckApp {
-            &self.inner
-        }
     }
 }
 
