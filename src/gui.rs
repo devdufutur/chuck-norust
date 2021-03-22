@@ -1,16 +1,28 @@
-use nwg::{TrayNotificationFlags, Timer, MenuItem, Menu, TrayNotification, Icon, ComboBox, Label, Window, MenuSeparator, GlobalCursor, stop_thread_dispatch, Button, EmbedResource};
 use nwd::NwgUi;
+use nwg::{
+    stop_thread_dispatch, Button, ComboBox, EmbedResource, GlobalCursor, Icon, Label, Menu,
+    MenuItem, MenuSeparator, Timer, TrayNotification, TrayNotificationFlags, Window,
+};
+
 use crate::combobox_model::ComboBoxModel;
-use crate::common::{LAST_QUOTE, DURATION_MODEL};
+use crate::common::{DURATION_MODEL, LAST_QUOTE};
+use crate::winreg::{read_notification_interval, write_notification_interval};
 
 #[derive(Deserialize, Debug)]
 pub struct ChuckFact {
-    value: String
+    value: String,
+}
+
+fn get_index_from_interval(interval: u32) -> usize {
+    DURATION_MODEL.iter()
+        .enumerate()
+        .find(|(_idx, ComboBoxModel { value, label: _ })| *value == interval)
+        .map(|(idx, _)| idx)
+        .unwrap_or(10000)
 }
 
 #[derive(Default, NwgUi)]
 pub struct ChuckApp {
-
     #[nwg_resource]
     embed: EmbedResource,
 
@@ -20,7 +32,7 @@ pub struct ChuckApp {
 
     #[nwg_control(position: (10, 10), size: (260, 40), text: "How fast should Chuck speak ?")]
     label_settings: Label,
-    #[nwg_control(position: (10, 40), size: (260, 40), selected_index: Some(0), collection: DURATION_MODEL.to_vec())]
+    #[nwg_control(position: (10, 40), size: (260, 40), selected_index: Some(get_index_from_interval(read_notification_interval())), collection: DURATION_MODEL.to_vec())]
     #[nwg_events(OnComboxBoxSelection: [ChuckApp::change_timer_duration])]
     cb_settings: ComboBox<ComboBoxModel<u32>>,
     #[nwg_control(position: (10, 80), size: (260, 40), text: "OK")]
@@ -54,13 +66,12 @@ pub struct ChuckApp {
     #[nwg_control(parent: tray_menu, text: "E&xit")]
     #[nwg_events(OnMenuItemSelected: [ChuckApp::exit])]
     tray_item4: MenuItem,
-    #[nwg_control(interval: 10000, stopped: false)]
+    #[nwg_control(interval: read_notification_interval(), stopped: false)]
     #[nwg_events(OnTimerTick: [ChuckApp::next_quote])]
     timer: Timer,
 }
 
 impl ChuckApp {
-
     fn toggle_settings_visible(&self) {
         self.window.set_visible(!self.window.visible());
     }
@@ -97,7 +108,8 @@ impl ChuckApp {
             .ok()
             .map(|fact| fact.value)
         {
-            if quote.len() > 150 { // doesn't fit in win32 notifs
+            if quote.len() > 150 {
+                // doesn't fit in win32 notifs
                 self.next_quote();
             } else {
                 self.tray_item1.set_enabled(true);
@@ -117,11 +129,13 @@ impl ChuckApp {
     }
 
     fn change_timer_duration(&self) {
-        if let Some(ComboBoxModel { value, label }) = self.cb_settings
+        if let Some(ComboBoxModel { value, label }) = self
+            .cb_settings
             .selection()
             .and_then(|idx| DURATION_MODEL.get(idx))
         {
-            println!("sélection de {} : {} ms", label, *value);
+            println!("{} selected : {} ms", label, *value);
+            write_notification_interval(value);
             self.timer.stop();
             self.timer.set_interval(*value);
             self.timer.start();

@@ -3,6 +3,7 @@
 mod gui;
 mod combobox_model;
 mod common;
+mod winreg;
 
 #[macro_use]
 extern crate lazy_static;
