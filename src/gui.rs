@@ -1,12 +1,12 @@
 use nwd::NwgUi;
 use nwg::{
     stop_thread_dispatch, Button, ComboBox, EmbedResource, GlobalCursor, Icon, Label, Menu,
-    MenuItem, MenuSeparator, Timer, TrayNotification, TrayNotificationFlags, Window,
+    MenuItem, MenuSeparator, Timer, TrayNotification, TrayNotificationFlags, Window, CheckBox, CheckBoxState
 };
 
 use crate::combobox_model::ComboBoxModel;
 use crate::common::{DURATION_MODEL, LAST_QUOTE};
-use crate::winreg::{read_notification_interval, write_notification_interval};
+use crate::winreg::{read_notification_interval, write_notification_interval, read_silent_notification, write_silent_notification};
 
 #[derive(Deserialize, Debug)]
 pub struct ChuckFact {
@@ -27,15 +27,18 @@ pub struct ChuckApp {
     embed: EmbedResource,
 
     // window: MessageWindow,
-    #[nwg_control(size: (280, 130), center: true, title: "Settings", flags: "WINDOW")]
+    #[nwg_control(size: (280, 155), center: true, title: "Settings", flags: "WINDOW")]
     window: Window,
 
-    #[nwg_control(position: (10, 10), size: (260, 40), text: "How fast should Chuck speak ?")]
+    #[nwg_control(position: (10, 10), size: (260, 30), text: "Notification interval :")]
     label_settings: Label,
-    #[nwg_control(position: (10, 40), size: (260, 40), selected_index: Some(get_index_from_interval(read_notification_interval())), collection: DURATION_MODEL.to_vec())]
+    #[nwg_control(position: (10, 40), size: (260, 30), selected_index: Some(get_index_from_interval(read_notification_interval())), collection: DURATION_MODEL.to_vec())]
     #[nwg_events(OnComboxBoxSelection: [ChuckApp::change_timer_duration])]
     cb_settings: ComboBox<ComboBoxModel<u32>>,
-    #[nwg_control(position: (10, 80), size: (260, 40), text: "OK")]
+    #[nwg_control(position: (10, 70), size: (260, 30), text: "Silent notifications", check_state: if read_silent_notification() { CheckBoxState::Checked } else { CheckBoxState::Unchecked })]
+    #[nwg_events(OnButtonClick: [ChuckApp::change_silent_notification])]
+    cb_silent_notif: CheckBox,
+    #[nwg_control(position: (10, 110), size: (260, 35), text: "OK")]
     #[nwg_events(OnButtonClick: [ChuckApp::hide_settings_window])]
     ok_settings: Button,
 
@@ -92,10 +95,14 @@ impl ChuckApp {
     fn repeat_last_quote(&self) {
         if let Ok(quote) = LAST_QUOTE.lock() {
             self.timer.stop();
+            let mut flags = TrayNotificationFlags::USER_ICON | TrayNotificationFlags::LARGE_ICON;
+            if read_silent_notification() {
+                flags = flags | TrayNotificationFlags::SILENT;
+            }
             self.tray.show(
                 &quote,
                 Some("Chuck fact..."),
-                Some(TrayNotificationFlags::USER_ICON | TrayNotificationFlags::LARGE_ICON),
+                Some(flags),
                 Some(&self.icon_notif),
             );
             self.timer.start();
@@ -116,11 +123,15 @@ impl ChuckApp {
                 if let Ok(mut last_quote_mutex) = LAST_QUOTE.lock() {
                     *last_quote_mutex = quote.clone();
                 }
+                let mut flags = TrayNotificationFlags::USER_ICON | TrayNotificationFlags::LARGE_ICON;
+                if read_silent_notification() {
+                    flags = flags | TrayNotificationFlags::SILENT;
+                }
                 self.timer.stop();
                 self.tray.show(
                     &quote,
                     Some("Chuck fact..."),
-                    Some(TrayNotificationFlags::USER_ICON | TrayNotificationFlags::LARGE_ICON),
+                    Some(flags),
                     Some(&self.icon_notif),
                 );
                 self.timer.start();
@@ -135,11 +146,15 @@ impl ChuckApp {
             .and_then(|idx| DURATION_MODEL.get(idx))
         {
             println!("{} selected : {} ms", label, *value);
-            write_notification_interval(value);
+            write_notification_interval(*value);
             self.timer.stop();
             self.timer.set_interval(*value);
             self.timer.start();
         }
+    }
+
+    fn change_silent_notification(&self) {
+        write_silent_notification(self.cb_silent_notif.check_state() == CheckBoxState::Checked);
     }
 
     fn exit(&self) {
