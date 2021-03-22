@@ -1,4 +1,4 @@
-# chuck-norust
+# Chuck Norust
 
 Get notified of Chuck Norris randoms facts all day long (every 10 seconds to every hour)... 
 
